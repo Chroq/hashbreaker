@@ -26,18 +26,9 @@ func TestBruteForce(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run("Recursive_"+tt.name, func(t *testing.T) {
-			hash := sha256.Sum256([]byte(tt.word))
-			got := main.BruteForceRecursive(hash, tt.depth)
-
-			if got != tt.word {
-				t.Errorf("Expected %q, got %q", tt.word, got)
-			}
-		})
-
 		t.Run("Iterative_"+tt.name, func(t *testing.T) {
 			hash := sha256.Sum256([]byte(tt.word))
-			got := main.BruteForceIterative(hash, tt.depth)
+			got := main.NewArrayReferential(tt.depth).Get(hash)
 
 			if got != tt.word {
 				t.Errorf("Expected %q, got %q", tt.word, got)
@@ -46,37 +37,7 @@ func TestBruteForce(t *testing.T) {
 	}
 }
 
-func TestBruteForceRecursive(t *testing.T) {
-	tests := []struct {
-		name  string
-		word  string
-		depth int
-	}{
-		{
-			name:  "word z3D",
-			word:  "z3D",
-			depth: 3,
-		},
-		{
-			name:  "word Sh3n",
-			word:  "Sh3n",
-			depth: 4,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			hash := sha256.Sum256([]byte(tt.word))
-			got := main.BruteForceRecursive(hash, tt.depth)
-
-			if got != tt.word {
-				t.Errorf("Expected %q, got %q", tt.word, got)
-			}
-		})
-	}
-}
-
-func BenchmarkBruteForce(b *testing.B) {
+func BenchmarkNewArrayReferential(b *testing.B) {
 	targets := []struct {
 		word  string
 		depth int
@@ -92,14 +53,41 @@ func BenchmarkBruteForce(b *testing.B) {
 	}
 
 	for _, tt := range targets {
-		b.Run(tt.word+"_Recursive", func(b *testing.B) {
-			hash := sha256.Sum256([]byte(tt.word))
-			main.BruteForceRecursive(hash, tt.depth)
+		b.Run(tt.word+"_ArrayReferential", func(b *testing.B) {
+			main.NewArrayReferential(tt.depth)
 		})
 
-		b.Run(tt.word+"_Iterative", func(b *testing.B) {
-			hash := sha256.Sum256([]byte(tt.word))
-			main.BruteForceIterative(hash, tt.depth)
+		b.Run(tt.word+"_MapReferential", func(b *testing.B) {
+			main.NewMapReferential(tt.depth)
+		})
+	}
+}
+
+func BenchmarkGet(b *testing.B) {
+	targets := []struct {
+		word  string
+		depth int
+	}{
+		{
+			word:  "z3D",
+			depth: 3,
+		},
+		{
+			word:  "Sh3n",
+			depth: 4,
+		},
+	}
+
+	for _, tt := range targets {
+		arrayReferential := main.NewArrayReferential(tt.depth)
+		mapReferential := main.NewMapReferential(tt.depth)
+
+		b.Run(tt.word+"_ArrayReferential", func(b *testing.B) {
+			arrayReferential.Get(sha256.Sum256([]byte(tt.word)))
+		})
+
+		b.Run(tt.word+"_MapReferential", func(b *testing.B) {
+			mapReferential.Get(sha256.Sum256([]byte(tt.word)))
 		})
 	}
 }

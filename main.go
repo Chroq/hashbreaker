@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha256"
+	"math"
 	"os"
 )
 
@@ -10,14 +11,21 @@ const (
 	maxDeepth = 8
 )
 
-func main() {
-	inputWord := os.Args[1]
-	targetz3DHash := sha256.Sum256([]byte(inputWord))
-	BruteForceIterative(targetz3DHash, maxDeepth)
-	BruteForceRecursive(targetz3DHash, maxDeepth)
+type Candidate struct {
+	hash [32]byte
+	word string
 }
 
-func BruteForceIterative(hash [32]byte, depth int) string {
+type ArrayReferential struct {
+	hashedPasswords []Candidate
+}
+
+func NewArrayReferential(depth int) ArrayReferential {
+	capacity := int(math.Pow(float64(len(charset)), float64(depth)))
+	referental := ArrayReferential{
+		hashedPasswords: make([]Candidate, 0, capacity),
+	}
+
 	for d := 1; d <= depth; d++ {
 		indices := make([]int, d)
 		buf := make([]byte, d)
@@ -25,10 +33,6 @@ func BruteForceIterative(hash [32]byte, depth int) string {
 		for {
 			for i, idx := range indices {
 				buf[i] = charset[idx]
-			}
-
-			if sha256.Sum256(buf) == hash {
-				return string(buf)
 			}
 
 			pos := d - 1
@@ -44,36 +48,83 @@ func BruteForceIterative(hash [32]byte, depth int) string {
 			if pos < 0 {
 				break
 			}
+
+			hashedPassword := sha256.Sum256(buf)
+			referental.hashedPasswords = append(referental.hashedPasswords, Candidate{
+				hash: hashedPassword,
+				word: string(buf),
+			})
 		}
 	}
 
+	return referental
+}
+
+func (r ArrayReferential) Get(hash [32]byte) string {
+	for i := range r.hashedPasswords {
+		if r.hashedPasswords[i].hash == hash {
+			return r.hashedPasswords[i].word
+		}
+	}
 	return ""
 }
 
-func BruteForceRecursive(hash [32]byte, depth int) string {
+type MapReferential struct {
+	hashedPasswords map[[32]byte]string
+}
+
+func NewMapReferential(depth int) MapReferential {
+	referental := MapReferential{
+		hashedPasswords: make(map[[32]byte]string),
+	}
+
 	for d := 1; d <= depth; d++ {
-		res := search("", d, hash)
-		if res != "" {
-			return res
+		indices := make([]int, d)
+		buf := make([]byte, d)
+
+		for {
+			for i, idx := range indices {
+				buf[i] = charset[idx]
+			}
+
+			pos := d - 1
+			for pos >= 0 {
+				indices[pos]++
+				if indices[pos] < len(charset) {
+					break
+				}
+				indices[pos] = 0
+				pos--
+			}
+
+			if pos < 0 {
+				break
+			}
+
+			hashedPassword := sha256.Sum256(buf)
+			referental.hashedPasswords[hashedPassword] = string(buf)
 		}
 	}
-	return ""
+
+	return referental
 }
 
-func search(current string, targetLen int, hash [32]byte) string {
-	if len(current) == targetLen {
-		if sha256.Sum256([]byte(current)) == hash {
-			return current
-		}
-		return ""
-	}
+func (r MapReferential) Get(hash [32]byte) (string, bool) {
+	word, ok := r.hashedPasswords[hash]
+	return word, ok
+}
 
-	for i := 0; i < len(charset); i++ {
-		res := search(current+string(charset[i]), targetLen, hash)
-		if res != "" {
-			return res
-		}
-	}
+func main() {
+	inputHash := GetHash(os.Args[1])
 
-	return ""
+	mapReferential := NewMapReferential(maxDeepth)
+	arrayReferential := NewArrayReferential(maxDeepth)
+
+	mapReferential.Get(inputHash)
+	arrayReferential.Get(inputHash)
+
+}
+
+func GetHash(word string) [32]byte {
+	return sha256.Sum256([]byte(word))
 }
