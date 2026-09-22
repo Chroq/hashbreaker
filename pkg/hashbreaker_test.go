@@ -1,10 +1,10 @@
-package main_test
+package pkg_test
 
 import (
 	"crypto/sha256"
 	"testing"
 
-	main "github.com/Chroq/HashBreaker"
+	"github.com/Chroq/HashBreaker/pkg"
 )
 
 func TestBruteForce(t *testing.T) {
@@ -26,18 +26,27 @@ func TestBruteForce(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run("Iterative_"+tt.name, func(t *testing.T) {
+		t.Run("Array_"+tt.name, func(t *testing.T) {
 			hash := sha256.Sum256([]byte(tt.word))
-			got := main.NewArrayReferential(tt.depth).Get(hash)
+			got := pkg.NewArrayReferential(tt.depth).Get(hash)
 
 			if got != tt.word {
+				t.Errorf("Expected %q, got %q", tt.word, got)
+			}
+		})
+
+		t.Run("Map_"+tt.name, func(t *testing.T) {
+			hash := sha256.Sum256([]byte(tt.word))
+			got, ok := pkg.NewMapReferential(tt.depth).Get(hash)
+
+			if !ok || got != tt.word {
 				t.Errorf("Expected %q, got %q", tt.word, got)
 			}
 		})
 	}
 }
 
-func BenchmarkNewArrayReferential(b *testing.B) {
+func BenchmarkNewReferential(b *testing.B) {
 	targets := []struct {
 		word  string
 		depth int
@@ -54,11 +63,17 @@ func BenchmarkNewArrayReferential(b *testing.B) {
 
 	for _, tt := range targets {
 		b.Run(tt.word+"_ArrayReferential", func(b *testing.B) {
-			main.NewArrayReferential(tt.depth)
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				pkg.NewArrayReferential(tt.depth)
+			}
 		})
 
 		b.Run(tt.word+"_MapReferential", func(b *testing.B) {
-			main.NewMapReferential(tt.depth)
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				pkg.NewMapReferential(tt.depth)
+			}
 		})
 	}
 }
@@ -79,15 +94,22 @@ func BenchmarkGet(b *testing.B) {
 	}
 
 	for _, tt := range targets {
-		arrayReferential := main.NewArrayReferential(tt.depth)
-		mapReferential := main.NewMapReferential(tt.depth)
+		arrayReferential := pkg.NewArrayReferential(tt.depth)
+		mapReferential := pkg.NewMapReferential(tt.depth)
+		hash := sha256.Sum256([]byte(tt.word))
 
 		b.Run(tt.word+"_ArrayReferential", func(b *testing.B) {
-			arrayReferential.Get(sha256.Sum256([]byte(tt.word)))
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				arrayReferential.Get(hash)
+			}
 		})
 
 		b.Run(tt.word+"_MapReferential", func(b *testing.B) {
-			mapReferential.Get(sha256.Sum256([]byte(tt.word)))
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				mapReferential.Get(hash)
+			}
 		})
 	}
 }
