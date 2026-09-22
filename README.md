@@ -1,116 +1,82 @@
-# HashBreaker - Optimisation des Performances en Go
+# HashBreaker
 
-Projet réalisé dans le cadre du cours **M2 - Performance for Backend**.  
-L'objectif est d'explorer et de mesurer l'impact de différentes techniques d'optimisation (algorithmiques, gestion mémoire, concurrence, etc.) sur un cas concret et intensif en calculs : le cassage d'empreintes cryptographiques **SHA-256** par force brute.
-
----
-
-## 🎯 Problématique & Espace Combinatoire
-
-Pour une empreinte SHA-256 (`[32]byte`), on cherche le mot en clair d'origine composé à partir d'un jeu de caractères (`charset = [a-zA-Z0-9@]`, soit $N = 63$ caractères) jusqu'à une profondeur maximale $D$.
-
-L'espace de recherche total pour une profondeur $D$ correspond à :
-$$\sum_{d=1}^{D} N^d$$
-
-- **Profondeur 3 (`z3D`)** : $\approx 250\ 047$ combinaisons
-- **Profondeur 4 (`Sh3n`)** : $\approx 15\ 752\ 961$ combinaisons
-- **Profondeur 5 (`Ak@l1`)** : $\approx 992\ 436\ 543$ combinaisons
+Projet d'optimisation des performances en Go (**M2 Performance for Backend**).  
+Cassage d'empreintes **SHA-256** par force brute et étude du compromis temps/mémoire (*Time-Memory Tradeoff*).
 
 ---
 
-## 📊 Synthèse des Étapes d'Optimisation
+## 🎯 Espace Combinatoire
 
-| Étape                 | Approche / Technique                    | Phase Génération ($d=4$) | Phase Recherche ($d=4$) |   Mémoire Allouée ($d=4$)   |
-| :-------------------- | :-------------------------------------- | :----------------------: | :---------------------: | :-------------------------: |
-| **Étape 1 (Base)**    | Récursif naïf                           | N/A (calcul à la volée)  |         ~9.20 s         |   Très élevé (GC saturé)    |
-| **Étape 1 (Retenue)** | Itératif / Compteur                     | N/A (calcul à la volée)  |       **~2.40 s**       |        **Quasi nul**        |
-| **Étape 2 (Array)**   | Référentiel Tableau (`[]Candidate`)     |       **~5.33 s**        |    $O(N)$ séquentiel    | **~1.76 GB** (16.0M allocs) |
-| **Étape 2 (Map)**     | Référentiel Map (`map[[32]byte]string`) |         ~11.93 s         |  **$O(1)$ instantané**  |   ~3.82 GB (16.1M allocs)   |
-| _Étape 3 (À venir)_   | _..._                                   |          _..._           |          _..._          |            _..._            |
+Charset : `[a-zA-Z0-9@]` ($N = 63$ caractères).  
+Espace total pour une profondeur $D$ : $\sum_{d=1}^{D} N^d$
 
----
-
-## 🔬 Détail des Étapes
-
-### Étape 1 : Choix du Paradigme de Base (Itératif vs Récursif)
-
-#### 1. Description des Approches Naïves
-
-- **Récursive (`BruteForceRecursive`)** : Parcours en profondeur (DFS). À chaque niveau de récursion, une nouvelle chaîne est créée par concaténation (`current + string(charset[i])`), puis convertie en `[]byte` lors du hash.
-- **Itérative (`BruteForceIterative`)** : Compteur en base $N$ ("odomètre / compteur kilométrique"). Un unique buffer `buf := make([]byte, d)` est alloué par longueur et modifié directement en place (`buf[i] = charset[idx]`).
-
-#### 2. Mesures Comparatives
-
-| Métrique                               |   Version Récursive    | Version Itérative | Constat / Différence                                  |
-| :------------------------------------- | :--------------------: | :---------------: | :---------------------------------------------------- |
-| **Temps d'exécution (`z3D`)**          |        ~150 ms         |    **~40 ms**     | **~3.7x plus rapide**                                 |
-| **Temps d'exécution (`Sh3n`)**         |        ~9.20 s         |    **~2.40 s**    | **~3.8x plus rapide**                                 |
-| **Allocations (`B/op` & `allocs/op`)** |       Très élevé       |   **Quasi nul**   | Élimination des millions d'allocations temporaires    |
-| **Pression Garbage Collector (GC)**    |       Très forte       |     **Nulle**     | Aucun ramasse-miettes déclenché pendant la boucle     |
-| **Stack overhead**                     | Oui (appels imbriqués) |      **Non**      | Boucle plate hautement optimisable par le compilateur |
-
-#### 3. Analyse & Décision
-
-- L'immutabilité des strings en Go provoquait des millions d'allocations éphémères en récursif.
-- L'approche **itérative** élimine les allocations dans la boucle interne et sert de base de référence.
+- **Profondeur 3 (`z3D`)** : $\approx 2,5 \times 10^5$ combinaisons
+- **Profondeur 4 (`Sh3n`)** : $\approx 1,57 \times 10^7$ combinaisons
+- **Profondeur 5 (`Ak@l1`)** : $\approx 9,92 \times 10^8$ combinaisons
 
 ---
 
-### Étape 2 : Pré-calcul & Référentiels (Array vs Map)
+## 📊 Synthèse des Résultats
 
-Dans cette étape, on explore la stratégie du compromis temps/mémoire (_Time-Memory Tradeoff_) : pré-calculer et stocker l'ensemble des paires `(hash, mot)` dans une structure en mémoire pour accélérer les recherches ultérieures.
-
-Deux structures de stockage ont été testées :
-
-1. **`ArrayReferential`** : Stockage linéaire dans un slice de structures `[]Candidate` avec recherche linéaire $O(N)$.
-2. **`MapReferential`** : Table de hachage Go `map[[32]byte]string` avec recherche en temps constant $O(1)$.
-
-#### 1. Mesures : Phase de Génération (`New*Referential`)
-
-Résultats observés sur la profondeur $d = 4$ (`Sh3n`, ~15.7M combinaisons) :
-
-| Structure              | Temps de Génération | Mémoire Allouée (`B/op`) | Nombre d'Allocations |
-| :--------------------- | :-----------------: | :----------------------: | :------------------: |
-| **`ArrayReferential`** |     **~5.33 s**     |       **~1.76 GB**       |   **16.0M allocs**   |
-| **`MapReferential`**   |      ~11.93 s       |         ~3.82 GB         |     16.1M allocs     |
-
-> **Constat génération :** La construction de la Map est **~2.2x plus lente** et consomme **~2.1x plus de RAM** que le tableau à cause de la structure interne des buckets de la table de hachage Go, du surcoût d'en-tête et des réallocations dynamiques.
-
-#### 2. Mesures : Phase de Recherche (`Get`)
-
-| Structure              | Complexité Algorithmique |    Temps de recherche (`Get`)    | Comportement avec la taille                               |
-| :--------------------- | :----------------------: | :------------------------------: | :-------------------------------------------------------- |
-| **`ArrayReferential`** |          $O(N)$          | Variable (dépend de la position) | Se dégrade linéairement avec la taille du référentiel     |
-| **`MapReferential`**   |        **$O(1)$**        |       **Quasi instantané**       | Temps d'accès constant quel que soit le volume de données |
-
-#### 3. Conclusions de l'Étape 2
-
-1. **Génération : Avantage au Tableau (`ArrayReferential`)**
-   - Le tableau alloue un bloc contigu (`[]Candidate`), offrant une meilleure localité spatiale du cache CPU et moins d'overhead mémoire brut.
-2. **Recherche : Avantage écrasant à la Map (`MapReferential`)**
-   - L'accès $O(1)$ permet de retrouver n'importe quel hash immédiatement une fois la map en mémoire.
-3. **Limite majeure (Goulet d'étranglement mémoire) :**
-   - À $d=4$, la Map consomme déjà **~3.8 GB** de mémoire vive.
-   - À $d=5$ (~1 milliard de combinaisons), cette approche nécessiterait **plusieurs dizaines à centaines de gigaoctets de RAM**, rendant le stockage en mémoire vive brut non viable sans techniques de compactage (Rainbow tables, filtres de Bloom, compression ou stockage disque).
+| Étape | Approche | Génération ($d=4$) | Recherche ($d=4$) | RAM ($d=4$) | Conclusion |
+| :--- | :--- | :---: | :---: | :---: | :--- |
+| **1** | Récursif naïf | N/A | ~9.20 s | Saturée (GC) | Rejeté : allocations massives de `string` |
+| **1** | **Itératif (odomètre)** | N/A | **~2.40 s** | **~0 B** | **Retenu : 3.8x plus rapide, zéro allocation** |
+| **2** | Référentiel **Slice** (`[]Candidate`) | **~5.33 s** | $O(N)$ séquentiel | **~1.76 GB** | Génération 2.2x plus rapide, 2.1x moins de RAM |
+| **2** | Référentiel **Map** (`map[[32]byte]string`) | ~11.93 s | **$O(1)$ instantané** | ~3.82 GB | Recherche immédiate mais surcoût mémoire élevé |
 
 ---
 
-## 🛠️ Commandes Utiles
+## 🔬 Enseignements Clés
 
-- **Exécuter le programme :**
+### Étape 1 : Récursif vs Itératif
+- **Récursif :** Création d'une nouvelle `string` à chaque feuille $\rightarrow$ saturation du Garbage Collector.
+- **Itératif :** Réutilisation d'un buffer `[]byte` unique en mémoire $\rightarrow$ 0 allocation, cache CPU optimal.
 
-  ```bash
-  go run main.go z3D
-  ```
+### Étape 2 : Pré-calcul Slice vs Map
+- **Génération :** La `Slice` est **2.2x plus rapide** grâce à l'allocation contiguë en mémoire.
+- **Recherche :** La `Map` offre un accès **$O(1)$ instantané**, contre un parcours $O(N)$ pour la `Slice`.
+- **Limite :** À $d=5$, le stockage brut en RAM dépasserait les ~100 GB. Nécessite des approches compressées (Rainbow Tables).
 
-- **Lancer la suite de tests :**
+---
 
-  ```bash
-  go test -v ./...
-  ```
+## 🛠️ Commandes
 
-- **Lancer les benchmarks mémoire et temps :**
+### 1. Exécution directe
+```bash
+go run ./cmd/map z3D
+go run ./cmd/slice z3D
+```
 
-  ```bash
-  go test -bench=. -benchmem ./...
-  ```
+### 2. Compilation
+```bash
+go build -o bin/hashbreaker-map ./cmd/map
+go build -o bin/hashbreaker-slice ./cmd/slice
+```
+
+### 3. Benchmark comparatif binaire (`hyperfine`)
+```bash
+# Compilation et mesure comparative (profondeur 3)
+go build -o bin/hashbreaker-map ./cmd/map && \
+go build -o bin/hashbreaker-slice ./cmd/slice && \
+hyperfine --warmup 3 --runs 20 \
+  './bin/hashbreaker-map z3D' \
+  './bin/hashbreaker-slice z3D'
+```
+
+### 4. Analyse statistique des benchmarks Go (`benchstat`)
+```bash
+# Installation de benchstat
+go install golang.org/x/perf/cmd/benchstat@latest
+
+# Exécution des benchmarks répétés
+go test -bench=. -benchmem -count=6 ./pkg > bench.txt
+
+# Affichage des statistiques (médiane, écart-type, B/op)
+benchstat bench.txt
+```
+
+### 5. Tests unitaires
+```bash
+go test -v ./...
+```
