@@ -13,36 +13,48 @@ type MapReferential struct {
 	HashedPasswords map[[32]byte]string
 }
 
+func TotalCombinations(depth int) int {
+	total := 0
+	curr := 1
+	n := len(Charset)
+	for d := 1; d <= depth; d++ {
+		curr *= n
+		total += curr
+	}
+	return total
+}
+
 func NewMapReferential(depth int) MapReferential {
 	referential := MapReferential{
-		HashedPasswords: make(map[[32]byte]string),
+		HashedPasswords: make(map[[32]byte]string, TotalCombinations(depth)),
 	}
 
 	for d := 1; d <= depth; d++ {
 		indices := make([]int, d)
 		buf := make([]byte, d)
+		for i := range buf {
+			buf[i] = Charset[0]
+		}
 
 		for {
-			for i, idx := range indices {
-				buf[i] = Charset[idx]
-			}
+			hashedPassword := sha256.Sum256(buf)
+			referential.HashedPasswords[hashedPassword] = string(buf)
 
 			pos := d - 1
 			for pos >= 0 {
 				indices[pos]++
 				if indices[pos] < len(Charset) {
+					buf[pos] = Charset[indices[pos]]
 					break
 				}
 				indices[pos] = 0
+				buf[pos] = Charset[0]
 				pos--
 			}
 
 			if pos < 0 {
 				break
 			}
-
-			hashedPassword := sha256.Sum256(buf)
-			referential.HashedPasswords[hashedPassword] = string(buf)
 		}
 	}
 
