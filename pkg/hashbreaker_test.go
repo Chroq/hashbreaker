@@ -26,15 +26,6 @@ func TestBruteForce(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run("Array_"+tt.name, func(t *testing.T) {
-			hash := sha256.Sum256([]byte(tt.word))
-			got := pkg.NewArrayReferential(tt.depth).Get(hash)
-
-			if got != tt.word {
-				t.Errorf("Expected %q, got %q", tt.word, got)
-			}
-		})
-
 		t.Run("Map_"+tt.name, func(t *testing.T) {
 			hash := sha256.Sum256([]byte(tt.word))
 			got, ok := pkg.NewMapReferential(tt.depth).Get(hash)
@@ -62,13 +53,6 @@ func BenchmarkNewReferential(b *testing.B) {
 	}
 
 	for _, tt := range targets {
-		b.Run(tt.word+"_ArrayReferential", func(b *testing.B) {
-			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
-				pkg.NewArrayReferential(tt.depth)
-			}
-		})
-
 		b.Run(tt.word+"_MapReferential", func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
@@ -94,16 +78,8 @@ func BenchmarkGet(b *testing.B) {
 	}
 
 	for _, tt := range targets {
-		arrayReferential := pkg.NewArrayReferential(tt.depth)
 		mapReferential := pkg.NewMapReferential(tt.depth)
 		hash := sha256.Sum256([]byte(tt.word))
-
-		b.Run(tt.word+"_ArrayReferential", func(b *testing.B) {
-			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
-				arrayReferential.Get(hash)
-			}
-		})
 
 		b.Run(tt.word+"_MapReferential", func(b *testing.B) {
 			b.ReportAllocs()
