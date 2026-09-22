@@ -40,43 +40,19 @@ Espace total pour une profondeur $D$ : $\sum_{d=1}^{D} N^d$
 
 ---
 
-## 🛠️ Commandes
+## 🛠️ Commandes (via Makefile)
 
-### 1. Exécution directe
-```bash
-go run ./cmd/map z3D
-go run ./cmd/slice z3D
-```
+| Action | Commande Makefile | Commande brute équivalente |
+| :--- | :--- | :--- |
+| **Démarrer le serveur** | `make run` | `go build -o bin/hashbreaker-server ./cmd/srv && ./bin/hashbreaker-server` |
+| **Test de charge (Vegeta)** | `make load` | `echo "GET http://localhost:8080/guess?word=z3D" \| vegeta attack -duration=15s -rate=2000 \| vegeta report` |
+| **Charge + Profiling Web CPU** | `make load-and-profile` | Lance Vegeta en arrière-plan et ouvre pprof sur `http://localhost:6060` |
+| **Profil Mémoire (Heap)** | `make profile-heap` | `go tool pprof -http=:6060 http://localhost:8080/debug/pprof/heap` |
+| **Profil CPU ponctuel** | `make profile-cpu` | `go tool pprof -http=:6060 http://localhost:8080/debug/pprof/profile?seconds=10` |
+| **Benchmarks + Benchstat** | `make benchstat` | `go test -bench=. -benchmem -count=6 ./pkg > bench.txt && benchstat bench.txt` |
+| **Tests unitaires** | `make test` | `go test -v ./...` |
 
-### 2. Compilation
-```bash
-go build -o bin/hashbreaker-map ./cmd/map
-go build -o bin/hashbreaker-slice ./cmd/slice
-```
+> 💡 **Variables configurables :** `make run PORT=9000 DEPTH=4`, `make load WORD=Sh3n RATE=5000 DURATION=20s`.
 
-### 3. Benchmark comparatif binaire (`hyperfine`)
-```bash
-# Compilation et mesure comparative (profondeur 3)
-go build -o bin/hashbreaker-map ./cmd/map && \
-go build -o bin/hashbreaker-slice ./cmd/slice && \
-hyperfine --warmup 3 --runs 20 \
-  './bin/hashbreaker-map z3D' \
-  './bin/hashbreaker-slice z3D'
-```
 
-### 4. Analyse statistique des benchmarks Go (`benchstat`)
-```bash
-# Installation de benchstat
-go install golang.org/x/perf/cmd/benchstat@latest
 
-# Exécution des benchmarks répétés
-go test -bench=. -benchmem -count=6 ./pkg > bench.txt
-
-# Affichage des statistiques (médiane, écart-type, B/op)
-benchstat bench.txt
-```
-
-### 5. Tests unitaires
-```bash
-go test -v ./...
-```
