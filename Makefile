@@ -1,9 +1,10 @@
-.PHONY: help build run test bench benchstat load profile-cpu profile-heap load-and-profile clean
+.PHONY: help build run test bench benchstat load hash guess profile-cpu profile-heap load-and-profile clean
 
 PORT ?= 8080
-DEPTH ?= 3
-WORD ?= z3D
-RATE ?= 2000
+DEPTH ?= 4
+WORD ?= Sh3n
+HASH ?= bd7d0ea8cf7ade4a446ba4efc46fd99071ec3f423770991ac51f70ec5a894dc7
+RATE ?= 1000
 DURATION ?= 15s
 PPROF_PORT ?= 6060
 BIN_DIR := bin
@@ -20,6 +21,13 @@ build: ## Compile le serveur HTTP
 run: build ## Compile et démarre le serveur HTTP (PORT=8080 DEPTH=3)
 	./$(BINARY) -port $(PORT) -depth $(DEPTH)
 
+hash: ## Calcule le SHA-256 d'un mot (ex: make hash WORD=Sh3n)
+	@go run ./cmd/hasher $(WORD)
+
+guess: ## Interroge le serveur HTTP avec une empreinte SHA-256 (ex: make guess HASH=...)
+	@curl -s "http://localhost:$(PORT)/guess?hash=$(HASH)"
+	@echo ""
+
 test: ## Exécute les tests unitaires
 	go test -v ./...
 
@@ -31,8 +39,8 @@ benchstat: ## Exécute les benchmarks et génère l'analyse statistique
 	go test -bench=. -benchmem -count=6 ./pkg > bench.txt
 	benchstat bench.txt
 
-load: ## Exécute un test de charge avec Vegeta (ex: make load WORD=z3D RATE=2000 DURATION=10s)
-	@echo "GET http://localhost:$(PORT)/guess?word=$(WORD)" | vegeta attack -duration=$(DURATION) -rate=$(RATE) | vegeta report
+load: ## Exécute un test de charge avec Vegeta (ex: make load HASH=... RATE=2000 DURATION=10s)
+	@echo "GET http://localhost:$(PORT)/guess?hash=$(HASH)" | vegeta attack -duration=$(DURATION) -rate=$(RATE) | vegeta report
 
 profile-cpu: ## Capture le profil CPU (10s) et ouvre l'interface Web pprof sur :6060
 	go tool pprof -http=:$(PPROF_PORT) http://localhost:$(PORT)/debug/pprof/profile?seconds=10
@@ -42,7 +50,7 @@ profile-heap: ## Capture le profil Heap (RAM) et ouvre l'interface Web pprof sur
 
 load-and-profile: ## Injecte la charge avec Vegeta et ouvre l'interface Web pprof CPU en parallèle
 	@echo "==> Lancement de la charge Vegeta ($(RATE) req/s pendant $(DURATION))..."
-	@echo "GET http://localhost:$(PORT)/guess?word=$(WORD)" | vegeta attack -duration=$(DURATION) -rate=$(RATE) > /tmp/vegeta_results.bin & \
+	@echo "GET http://localhost:$(PORT)/guess?hash=$(HASH)" | vegeta attack -duration=$(DURATION) -rate=$(RATE) > /tmp/vegeta_results.bin & \
 	ATTACK_PID=$$!; \
 	sleep 1; \
 	echo "==> Capture du profil CPU (10s) et ouverture de l'interface pprof sur :$(PPROF_PORT)..."; \

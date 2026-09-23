@@ -7,6 +7,13 @@ import (
 	"github.com/Chroq/HashBreaker/pkg"
 )
 
+var (
+	SinkString string
+	SinkRaw    [pkg.MaxDepth]byte
+	SinkLen    int
+	SinkOk     bool
+)
+
 func TestBruteForce(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -28,10 +35,16 @@ func TestBruteForce(t *testing.T) {
 	for _, tt := range tests {
 		t.Run("Map_"+tt.name, func(t *testing.T) {
 			hash := sha256.Sum256([]byte(tt.word))
-			got, ok := pkg.NewMapReferential(tt.depth).Get(hash)
+			ref := pkg.NewMapReferential(tt.depth)
 
+			got, ok := ref.Get(hash)
 			if !ok || got != tt.word {
-				t.Errorf("Expected %q, got %q", tt.word, got)
+				t.Errorf("Get: Expected %q, got %q", tt.word, got)
+			}
+
+			rawWord, n, okRaw := ref.GetRaw(hash)
+			if !okRaw || string(rawWord[:n]) != tt.word {
+				t.Errorf("GetRaw: Expected %q, got %q", tt.word, string(rawWord[:n]))
 			}
 		})
 	}
@@ -56,7 +69,7 @@ func BenchmarkNewReferential(b *testing.B) {
 		b.Run(tt.word+"_MapReferential", func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				pkg.NewMapReferential(tt.depth)
+				_ = pkg.NewMapReferential(tt.depth)
 			}
 		})
 	}
@@ -81,11 +94,30 @@ func BenchmarkGet(b *testing.B) {
 		mapReferential := pkg.NewMapReferential(tt.depth)
 		hash := sha256.Sum256([]byte(tt.word))
 
+		// Benchmark Get standard avec consommation du résultat (anti-DCE)
 		b.Run(tt.word+"_MapReferential", func(b *testing.B) {
 			b.ReportAllocs()
+			var s string
+			var ok bool
 			for i := 0; i < b.N; i++ {
-				mapReferential.Get(hash)
+				s, ok = mapReferential.Get(hash)
 			}
+			SinkString = s
+			SinkOk = ok
+		})
+
+		// Benchmark GetRaw zéro-allocation natif
+		b.Run(tt.word+"_GetRaw", func(b *testing.B) {
+			b.ReportAllocs()
+			var w [pkg.MaxDepth]byte
+			var n int
+			var ok bool
+			for i := 0; i < b.N; i++ {
+				w, n, ok = mapReferential.GetRaw(hash)
+			}
+			SinkRaw = w
+			SinkLen = n
+			SinkOk = ok
 		})
 	}
 }

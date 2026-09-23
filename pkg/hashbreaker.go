@@ -10,7 +10,7 @@ import (
 const (
 	Charset   = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@"
 	MaxDepth  = 8
-	batchSize = 128
+	batchSize = 64
 )
 
 type Shard struct {
@@ -19,7 +19,7 @@ type Shard struct {
 }
 
 type MapReferential struct {
-	shards []Shard
+	shards *[256]Shard
 }
 
 func TotalCombinations(depth int) int {
@@ -51,7 +51,7 @@ type workerBatches struct {
 	lens  [256]int
 }
 
-func (wb *workerBatches) add(shards []Shard, hash [32]byte, word [MaxDepth]byte) {
+func (wb *workerBatches) add(shards *[256]Shard, hash [32]byte, word [MaxDepth]byte) {
 	s := hash[0]
 	idx := wb.lens[s]
 	wb.items[s][idx] = batchItem{hash: hash, word: word}
@@ -68,7 +68,7 @@ func (wb *workerBatches) add(shards []Shard, hash [32]byte, word [MaxDepth]byte)
 	wb.lens[s] = idx
 }
 
-func (wb *workerBatches) flush(shards []Shard) {
+func (wb *workerBatches) flush(shards *[256]Shard) {
 	for s := range 256 {
 		n := wb.lens[s]
 		if n > 0 {
@@ -90,27 +90,39 @@ type task struct {
 }
 
 func NewMapReferential(depth int) MapReferential {
-	shards := make([]Shard, 256)
+	var shards [256]Shard
 	total := TotalCombinations(depth)
 	shardCap := (total / 256) + (total / 2048) + 16
 	for i := range 256 {
 		shards[i].m = make(map[[32]byte][MaxDepth]byte, shardCap)
 	}
 
-	var tasks []task
+	nCharset := len(Charset)
+	estimatedTasks := 0
+	if depth >= 1 {
+		estimatedTasks += nCharset
+	}
+	if depth >= 2 {
+		estimatedTasks += nCharset
+	}
+	if depth >= 3 {
+		estimatedTasks += (depth - 2) * nCharset * nCharset
+	}
+	tasks := make([]task, 0, estimatedTasks)
+
 	for d := 1; d <= depth; d++ {
 		switch d {
 		case 1:
-			for i := 0; i < len(Charset); i++ {
+			for i := 0; i < nCharset; i++ {
 				tasks = append(tasks, task{depth: 1, prefLen: 1, prefix: [2]byte{Charset[i]}})
 			}
 		case 2:
-			for i := 0; i < len(Charset); i++ {
+			for i := 0; i < nCharset; i++ {
 				tasks = append(tasks, task{depth: 2, prefLen: 1, prefix: [2]byte{Charset[i]}})
 			}
 		default:
-			for i := 0; i < len(Charset); i++ {
-				for j := 0; j < len(Charset); j++ {
+			for i := 0; i < nCharset; i++ {
+				for j := 0; j < nCharset; j++ {
 					tasks = append(tasks, task{depth: d, prefLen: 2, prefix: [2]byte{Charset[i], Charset[j]}})
 				}
 			}
@@ -139,13 +151,14 @@ func NewMapReferential(depth int) MapReferential {
 				d := t.depth
 				prefLen := t.prefLen
 
+				for i := d; i < MaxDepth; i++ {
+					buf[i] = 0
+				}
 				copy(buf[:prefLen], t.prefix[:prefLen])
 
 				if prefLen == d {
 					hash := sha256.Sum256(buf[:d])
-					var w [MaxDepth]byte
-					copy(w[:], buf[:d])
-					wb.add(shards, hash, w)
+					wb.add(&shards, hash, buf)
 					continue
 				}
 
@@ -157,14 +170,12 @@ func NewMapReferential(depth int) MapReferential {
 
 				for {
 					hash := sha256.Sum256(buf[:d])
-					var w [MaxDepth]byte
-					copy(w[:], buf[:d])
-					wb.add(shards, hash, w)
+					wb.add(&shards, hash, buf)
 
 					pos := suffixLen - 1
 					for pos >= 0 {
 						indices[pos]++
-						if indices[pos] < len(Charset) {
+						if indices[pos] < nCharset {
 							buf[prefLen+pos] = Charset[indices[pos]]
 							break
 						}
@@ -177,16 +188,16 @@ func NewMapReferential(depth int) MapReferential {
 					}
 				}
 			}
-			wb.flush(shards)
+			wb.flush(&shards)
 		}()
 	}
 
 	wg.Wait()
-	return MapReferential{shards: shards}
+	return MapReferential{shards: &shards}
 }
 
 func (r MapReferential) Get(hash [32]byte) (string, bool) {
-	if len(r.shards) == 0 {
+	if r.shards == nil {
 		return "", false
 	}
 	shard := &r.shards[hash[0]]
@@ -195,6 +206,20 @@ func (r MapReferential) Get(hash [32]byte) (string, bool) {
 		return "", false
 	}
 	return decodeWord(word), true
+}
+
+func (r MapReferential) GetRaw(hash [32]byte) (word [MaxDepth]byte, n int, ok bool) {
+	if r.shards == nil {
+		return [MaxDepth]byte{}, 0, false
+	}
+	w, ok := r.shards[hash[0]].m[hash]
+	if !ok {
+		return [MaxDepth]byte{}, 0, false
+	}
+	for n < MaxDepth && w[n] != 0 {
+		n++
+	}
+	return w, n, true
 }
 
 func GetHash(word string) [32]byte {

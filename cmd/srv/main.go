@@ -42,15 +42,7 @@ func decodeHex32(src string) ([32]byte, error) {
 
 func parseTargetHash(r *http.Request) ([32]byte, error) {
 	rawQuery := r.URL.RawQuery
-	if strings.HasPrefix(rawQuery, "word=") {
-		word := rawQuery[5:]
-		if idx := strings.IndexByte(word, '&'); idx != -1 {
-			word = word[:idx]
-		}
-		if word != "" {
-			return pkg.GetHash(word), nil
-		}
-	} else if strings.HasPrefix(rawQuery, "hash=") {
+	if strings.HasPrefix(rawQuery, "hash=") {
 		hashHex := rawQuery[5:]
 		if idx := strings.IndexByte(hashHex, '&'); idx != -1 {
 			hashHex = hashHex[:idx]
@@ -60,17 +52,12 @@ func parseTargetHash(r *http.Request) ([32]byte, error) {
 		}
 	}
 
-	word := r.URL.Query().Get("word")
-	if word != "" {
-		return pkg.GetHash(word), nil
-	}
-
 	hashHex := r.URL.Query().Get("hash")
 	if hashHex != "" {
 		return decodeHex32(hashHex)
 	}
 
-	return [32]byte{}, fmt.Errorf("missing 'word' or 'hash' query parameter")
+	return [32]byte{}, fmt.Errorf("missing 'hash' query parameter")
 }
 
 var notFoundJSON = []byte("{\"found\":false}\n")

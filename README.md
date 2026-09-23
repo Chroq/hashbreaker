@@ -119,12 +119,14 @@ NewReferential/Sh3n_MapReferential-8     16137.75k ± 0%     66.09k ± 0%  -99.5
 | Action                         | Commande Makefile       | Commande brute équivalente                                                                                   |
 | :----------------------------- | :---------------------- | :----------------------------------------------------------------------------------------------------------- |
 | **Démarrer le serveur**        | `make run`              | `go build -o bin/hashbreaker-server ./cmd/srv && ./bin/hashbreaker-server`                                   |
-| **Test de charge (Vegeta)**    | `make load`             | `echo "GET http://localhost:8080/guess?word=z3D" \| vegeta attack -duration=15s -rate=2000 \| vegeta report` |
+| **Générer un SHA-256**         | `make hash WORD=z3D`    | `go run ./cmd/hasher z3D`                                                                                    |
+| **Tester une recherche**       | `make guess HASH=...`   | `curl -s "http://localhost:8080/guess?hash=..."`                                                             |
+| **Test de charge (Vegeta)**    | `make load`             | `echo "GET http://localhost:8080/guess?hash=a532ca..." \| vegeta attack -duration=15s -rate=2000 \| vegeta report` |
 | **Charge + Profiling Web CPU** | `make load-and-profile` | Lance Vegeta en arrière-plan et ouvre pprof sur `http://localhost:6060`                                      |
 | **Profil Mémoire (Heap)**      | `make profile-heap`     | `go tool pprof -http=:6060 http://localhost:8080/debug/pprof/heap`                                           |
 | **Profil CPU ponctuel**        | `make profile-cpu`      | `go tool pprof -http=:6060 http://localhost:8080/debug/pprof/profile?seconds=10`                             |
 | **Benchmarks + Benchstat**     | `make benchstat`        | `go test -bench=. -benchmem -count=6 ./pkg > bench.txt && benchstat bench.txt`                               |
 | **Tests unitaires**            | `make test`             | `go test -v ./...`                                                                                           |
 
-> 💡 **Variables configurables :** `make run PORT=9000 DEPTH=4`, `make load WORD=Sh3n RATE=5000 DURATION=20s`.
+> 💡 **Variables configurables :** `make run PORT=9000 DEPTH=4`, `make guess HASH=<hash>`, `make hash WORD=@kAl1`, `make load HASH=<hash> RATE=5000 DURATION=20s`.
 
