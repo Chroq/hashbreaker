@@ -1,0 +1,30 @@
+goos: linux
+goarch: amd64
+pkg: github.com/Chroq/HashBreaker/pkg
+cpu: Intel(R) Core(TM) i7-8665U CPU @ 1.90GHz
+BenchmarkNewReferential/z3D_MapReferential-8         	      36	  33363885 ns/op	36055080 B/op	    1573 allocs/op
+BenchmarkNewReferential/z3D_MapReferential-8         	      42	  30614956 ns/op	36055063 B/op	    1573 allocs/op
+BenchmarkNewReferential/z3D_MapReferential-8         	      39	  28845652 ns/op	36054639 B/op	    1571 allocs/op
+BenchmarkNewReferential/z3D_MapReferential-8         	      44	  27894406 ns/op	36054712 B/op	    1572 allocs/op
+BenchmarkNewReferential/z3D_MapReferential-8         	      43	  27340212 ns/op	36054304 B/op	    1571 allocs/op
+BenchmarkNewReferential/z3D_MapReferential-8         	      38	  36479384 ns/op	36054333 B/op	    1571 allocs/op
+BenchmarkNewReferential/Sh3n_MapReferential-8        	       1	2221075934 ns/op	1623348624 B/op	   66087 allocs/op
+BenchmarkNewReferential/Sh3n_MapReferential-8        	       1	1909252367 ns/op	1623348736 B/op	   66088 allocs/op
+BenchmarkNewReferential/Sh3n_MapReferential-8        	       1	1788140772 ns/op	1623348848 B/op	   66089 allocs/op
+BenchmarkNewReferential/Sh3n_MapReferential-8        	       1	1755882351 ns/op	1623348736 B/op	   66088 allocs/op
+BenchmarkNewReferential/Sh3n_MapReferential-8        	       1	1911181131 ns/op	1623348512 B/op	   66086 allocs/op
+BenchmarkNewReferential/Sh3n_MapReferential-8        	       1	1865011591 ns/op	1623348512 B/op	   66086 allocs/op
+BenchmarkGet/z3D_MapReferential-8                    	41949205	        26.15 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGet/z3D_MapReferential-8                    	46090653	        25.82 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGet/z3D_MapReferential-8                    	44383006	        26.22 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGet/z3D_MapReferential-8                    	41221240	        26.53 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGet/z3D_MapReferential-8                    	44175198	        26.58 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGet/z3D_MapReferential-8                    	42926371	        26.45 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGet/Sh3n_MapReferential-8                   	52328556	        20.43 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGet/Sh3n_MapReferential-8                   	57960158	        19.90 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGet/Sh3n_MapReferential-8                   	59759616	        20.90 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGet/Sh3n_MapReferential-8                   	48354716	        22.67 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGet/Sh3n_MapReferential-8                   	58066542	        20.81 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGet/Sh3n_MapReferential-8                   	59392638	        21.14 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/Chroq/HashBreaker/pkg	51.388s

@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
@@ -74,6 +73,8 @@ func parseTargetHash(r *http.Request) ([32]byte, error) {
 	return [32]byte{}, fmt.Errorf("missing 'word' or 'hash' query parameter")
 }
 
+var notFoundJSON = []byte("{\"found\":false}\n")
+
 func main() {
 	port := flag.Int("port", 8080, "HTTP server port")
 	depth := flag.Int("depth", 3, "Referential depth precalculation")
@@ -99,7 +100,7 @@ func main() {
 			n += copy(buf[n:], `","found":true}`+"\n")
 			w.Write(buf[:n])
 		} else {
-			io.WriteString(w, `{"found":false}`+"\n")
+			w.Write(notFoundJSON)
 		}
 	})
 
