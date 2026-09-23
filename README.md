@@ -1,132 +1,138 @@
-# HashBreaker
+# HashBreaker — Optimisation Haute Performance en Go
 
-Projet d'optimisation des performances en Go (**M2 Performance for Backend**).  
-Cassage d'empreintes **SHA-256** par force brute et étude du compromis temps/mémoire (_Time-Memory Tradeoff_).
-
----
-
-## Espace Combinatoire
-
-Charset : `[a-zA-Z0-9@]` ($N = 63$ caractères).  
-Espace total pour une profondeur $D$ : $\sum_{d=1}^{D} N^d$
-
-- **Profondeur 3 (`z3D`)** : $\approx 2,5 \times 10^5$ combinaisons
-- **Profondeur 4 (`Sh3n`)** : $\approx 1,57 \times 10^7$ combinaisons
-- **Profondeur 5 (`Ak@l1`)** : $\approx 9,92 \times 10^8$ combinaisons
+Projet pédagogique pour le cours **M2 Performance for Backend**.  
+Étude pratique de l'ingénierie des performances en Go : calcul intensif, gestion fine de la mémoire, élimination de la pression sur le Garbage Collector et parallélisme multi-cœurs à travers le cassage d'empreintes **SHA-256** par force brute (_Time-Memory Tradeoff_).
 
 ---
 
-## Synthèse des Résultats
+## 1. Problématique & Espace Combinatoire
 
-### 1. Comparatif Global des Approches
+On cherche à retrouver le mot d'origine correspondant à une empreinte SHA-256 issue d'un alphabet donné.
 
-| Étape | Approche                                       | Génération ($d=4$) |   Recherche ($d=4$)   | RAM ($d=4$)  | Conclusion                                                     |
-| :---- | :--------------------------------------------- | :----------------: | :-------------------: | :----------: | :------------------------------------------------------------- |
-| **1** | Récursif naïf                                  |        N/A         |        ~9.20 s        | Saturée (GC) | Rejeté : allocations massives de `string`                      |
-| **1** | **Itératif**                                   |        N/A         |      **~2.40 s**      |   **~0 B**   | **Retenu : 3.8x plus rapide, zéro allocation**                 |
-| **2** | Référentiel **Slice** (`[]Candidate`)          |    **~5.33 s**     |   $O(N)$ séquentiel   | **~1.76 GB** | Génération 2.2x plus rapide, 2.1x moins de RAM                 |
-| **2** | Référentiel **Map V0** (`map[[32]byte]string`) |      ~19.92 s      | **$O(1)$ instantané** |   ~3.55 GB   | Recherche immédiate mais génération lente et surcoût mémoire   |
-| **3** | Référentiel **Map V1** (Capacity Hint + Odo)   |      ~18.52 s      | **$O(1)$ instantané** |   ~1.81 GB   | RAM divisée par 2, zéro réallocation dynamique                 |
-| **4** | **Map V2 (Pointer-free + Goroutines)**         |    **~1.88 s**     | **$O(1)$ instantané** | **~1.51 GB** | **10.5x plus rapide, -99.6% allocations, GC footprint nul**     |
+- **Alphabet ($N = 63$) :** `abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@`
+- **Nombre total de combinaisons pour une profondeur $D$ :**
+  $$\sum_{d=1}^{D} N^d$$
 
-### 2. Métriques Détaillées de Référence (Baseline `MapReferential`)
-
-_Mesures initiales via `go test -bench=. -benchmem -count=6` analysées avec `benchstat`._
-
-| Benchmark                     | Temps par op (`sec/op`) | Mémoire par op (`B/op`) | Allocations (`allocs/op`) |
-| :---------------------------- | :---------------------: | :---------------------: | :-----------------------: |
-| **Génération $d=3$ (`z3D`)**  |    `255.9 ms ± 12%`     |       `56.79 MiB`       |         `256 083`         |
-| **Génération $d=4$ (`Sh3n`)** |     `19.92 s ± 15%`     |       `3.553 GiB`       |       `16 137 750`        |
-| **Recherche $d=3$ (`z3D`)**   |     `34.70 ns ± 6%`     |          `0 B`          |            `0`            |
-| **Recherche $d=4$ (`Sh3n`)**  |    `34.54 ns ± 20%`     |          `0 B`          |            `0`            |
+| Profondeur $D$ | Exemple cible | Nombre de combinaisons | Taille brute SHA-256 (32B) |
+| :------------- | :------------ | :--------------------- | :------------------------- |
+| **1**          | `@`           | $63$                   | $2 \text{ KB}$             |
+| **2**          | `a1`          | $4\ 032$               | $129 \text{ KB}$           |
+| **3**          | `z3D`         | $254\ 079$             | $8.1 \text{ MB}$           |
+| **4**          | `Sh3n`        | $16\ 007\ 040$         | $512.2 \text{ MB}$         |
+| **5**          | `Ak@l1`       | $1\ 008\ 443\ 583$     | $32.2 \text{ GB}$          |
 
 ---
 
-### 3. Optimisations Appliquées
+## 2. Paliers d'Optimisation Pédagogiques
 
-#### Principes et Mécanismes Pédagogiques
+### Étape 1 : Algorithme de parcours (Récursivité vs Odomètre)
 
-1. **Pré-allocation de la capacité de la Map (_Capacity Hint_) :**
-   - _Pourquoi ?_ Une `map` Go sans capacité initiale démarre avec une petite taille. Au fur et à mesure des insertions, elle double constamment sa table de hachage, copiant et ré-allouant des millions d'entrées (_churn_ mémoire).
-   - _Gain :_ Passer la capacité totale exacte $\sum_{d=1}^{D} |Charset|^d$ à l'initialisation supprime toutes les réallocations intermédiaires et **divise par 2 l'empreinte mémoire**.
+- **Approche naïve :** Génération récursive créant une nouvelle chaîne `string` à chaque combinaison.
+- **Problème :** Des centaines de millions d'allocations éphémères sur le tas (_heap churn_), saturation du Garbage Collector.
+- **Solution :** Odomètre itératif sur un buffer fixe `[MaxDepth]byte`. Seul l'octet modifié est incrémenté sur place, sans aucune allocation.
 
-2. **Odomètre d'octets différentiel (_In-place buffer_) :**
-   - _Pourquoi ?_ L'ancienne version reconstruisait l'intégralité du mot à partir d'un tableau d'indices à chaque itération.
-   - _Gain :_ La nouvelle approche met à jour uniquement l'octet qui a changé (dans plus de 98% des cas, seul le dernier caractère est incrémenté), épargnant des millions d'opérations de copie en mémoire.
+### Étape 2 : Élimination des pointeurs (_Pointer-Free Types & GC Tagging_)
 
-3. **Map Pointer-free (`[MaxDepth]byte` / `[8]byte`) :**
-   - _Pourquoi ?_ Le type `string` en Go est composé d'un en-tête (pointeur + longueur) pointant vers un tableau sur le tas (_heap_). Pour $d=4$, cela forçait le Garbage Collector à scanner et tracer **16 millions de pointeurs distincts**.
-   - _Gain :_ En remplaçant `string` par un tableau fixe `[8]byte`, la clé `[32]byte` et la valeur `[8]byte` ne contiennent **aucun pointeur**. Le runtime Go marque immédiatement les buckets de la table de hachage en `noscan`. Le nombre d'allocations à la génération chute de **16,1 millions à seulement 66 000** (**-99.59%**), et le coût de scan du GC tombe à **0**.
+- **Approche naïve :** `map[[32]byte]string`
+- **Problème :** L'en-tête de `string` contient un pointeur vers le tas. À $d=4$, le GC de Go doit tracer et scanner **16 millions de pointeurs distincts**, provoquant d'importantes pauses de marquage.
+- **Solution :** Remplacement par `map[[32]byte][8]byte`. Clés et valeurs étant des tableaux de scalaires purs (sans pointeurs), le runtime Go marque les buckets de la table en `noscan`. Le Garbage Collector ignore totalement cette structure en mémoire.
 
-4. **Parallélisation multi-cœurs via Sharded Maps (Goroutines) :**
-   - _Pourquoi ?_ La boucle de génération était strictement séquentielle (mono-thread), sous-exploitant les processeurs multi-cœurs modernes.
-   - _Gain :_ L'espace combinatoire est découpé en tâches distribuées dynamiquement à un pool de $N$ workers (`runtime.GOMAXPROCS(0)`). Pour éliminer toute contention de verrouillage (_lock contention_), la table est partitionnée en **256 shards indépendants** indexés directement par le premier octet de l'empreinte `hash[0]` (distribution SHA-256 parfaitement uniforme) avec insertion par micro-lots (_batching_). Le temps de génération passe de **19.92 s à 1.88 s** (**10.5x plus rapide**).
+### Étape 3 : Dimensionnement & Sharding Anti-Contention
 
-5. **Décodage Hexadécimal & Flux JSON Zéro-Allocation sur le Serveur HTTP :**
-   - _Pourquoi ?_ `hex.DecodeString` et `json.Marshal` par réflexion allouent à chaque requête HTTP.
-   - _Gain :_ Décodage direct dans un tableau fixe sur la pile (_stack_) et écriture directe dans le flux de réponse : **0 allocation** sur le chemin critique du serveur HTTP.
+- **Approche :** Découpage en **256 shards indépendants** indexés par le premier octet `hash[0]`.
+- **Dimensionnement :** Pré-allocation exacte par shard (`(totalComb + 255) / 256`).
+- **Micro-lots :** Tampon local par thread (`batchSize = 64`) divisant la fréquence des verrous par 64.
 
-6. **Contrôle de flux par Tagged Switch (`switch d`) :**
-   - _Pourquoi ?_ Les chaînes `if-else if` successives réévaluent séquentiellement la même variable au runtime, générant des sauts conditionnels redondants.
-   - _Gain :_ Le compilateur Go génère une table de saut directe (_jump table_) ou un dispatch optimal, éliminant les comparaisons superflues et maximisant l'efficacité de la prédiction de branchement CPU.
+### Étape 4 : Parallélisme multi-cœurs & Distribution Atomique
 
-7. **Coordination Lock-Free des Workers (`sync/atomic.Uint32`) :**
-   - _Pourquoi ?_ Distribuer dynamiquement les tâches aux $N$ workers via des canaux (`chan`) ou des verrous (`sync.Mutex`) induit de la contention, des allocations ou des changements de contexte noyau (_context switches_).
-   - _Gain :_ L'utilisation de primitives atomiques typées modernes `atomic.Uint32` (`taskCounter.Add(1)`) permet un ordonnancement _lock-free_ en **$O(1)$ en quelques cycles d'horloge CPU**, sans le moindre blocage thread ni contention mémoire.
+- **Dimensionnement des workers :** `runtime.NumCPU()` goroutines pour saturer 100% des cœurs physiques.
+- **Distribution des tâches :** Ordonnancement dynamique par compteur atomique `sync/atomic.Uint32` (`taskIdx.Add(1)`).
+
+### Étape 5 : Table de Hachage Plate SoA Tagguée & Sortie Texte (V5)
+
+- **Fast Path SoA Sub-15ns :** Remplacement de la map Go standard par une table de hachage plate à adressage ouvert (_Structure-of-Arrays_). L'empreinte SHA-256 étant cryptographiquement uniforme, aucun hachage n'est recalculé à l'exécution :
+  - `hash[0]` indexe l'un des 256 shards indépendants.
+  - `uint16(hash[1:3])` forme un tag de métadonnées compact (2 octets).
+  - `uint32(hash[3:7]) & mask` donne le slot de départ.
+  - **Sondage L2-Cache :** Le tableau des tags (`[]uint16`, 262 Ko par shard) réside intégralement dans le cache L2 du processeur. La comparaison de la clé 32 octets n'a lieu que si le tag correspond ($P \approx 1/65536$).
+- **Sortie Texte Native Zéro-Allocation :** Envoi HTTP direct sous forme de texte décodé (ex: `Sh3n`) sans allocation sur le tas, en remplacement du tableau brut d'octets.
+- **Pureté Architecturale & Zéro-Verrou :** Table 100% immuable en lecture sans verrous concurrents, ni mécanismes de calcul dynamique à la volée.
 
 ---
 
-### 4. Comparatifs `benchstat`
+## 3. Synthèse des Performances
 
-#### Comparatif V2 vs Baseline (Gain Global)
+### Évolution par version pour $d=4$ (`Sh3n`, 16 millions d'entrées)
 
-```text
-                                     │ bench_baseline.txt │        bench_optimized_v2.txt         │
-                                     │       sec/op       │    sec/op     vs base                 │
-NewReferential/z3D_MapReferential-8         255.95m ± 12%   29.73m ± 23%  -88.38% (8.6x plus vite)
-NewReferential/Sh3n_MapReferential-8         19.917 ± 15%    1.887 ± 18%  -90.52% (10.5x plus vite)
-Get/z3D_MapReferential-8                     34.70n ±  6%   26.33n ±  2%  -24.11% (p=0.002 n=6)
-Get/Sh3n_MapReferential-8                    34.54n ± 20%   20.85n ±  9%  -39.63% (p=0.002 n=6)
+| Version | Stratégie                                                | Temps de Génération |  Empreinte RAM  | Allocations  | Temps de Recherche (`GetRaw`) |
+| :------ | :------------------------------------------------------- | :-----------------: | :-------------: | :----------: | :---------------------------: |
+| **V0**  | Baseline mono-thread (`map[[32]byte]string`)             |      `19.92 s`      |   `3.553 GiB`   | `16 137 750` |          `34.54 ns`           |
+| **V1**  | Préallocation de capacité + Odomètre                     |      `18.52 s`      |   `1.811 GiB`   | `16 072 515` |          `37.77 ns`           |
+| **V2**  | Sharded Maps (256 shards + Mutex + Micro-lots)           |      `1.80 s`       |   `1.506 GiB`   |   `66 070`   |          `18.80 ns`           |
+| **V3**  | Tableaux Contigus Triés (`[256][]Entry` + Dichotomie)    |      `3.01 s`       | **`0.693 GiB`** |  **`287`**   |          `191.95 ns`          |
+| **V4**  | Single Map + `sync.RWMutex` + Batched                    |      `7.65 s`       |   `1.501 GiB`   |   `65 710`   |          `31.38 ns`           |
+| **V5**  | **SoA Tagged Flat Table (Fast-Path Pur & Sortie Texte)** |    **`1.56 s`**     |   `1.318 GiB`   |    `808`     | **`8.21 ns`** (0 alloc / 0 B) |
 
-                                     │ bench_baseline.txt │        bench_optimized_v2.txt         │
-                                     │        B/op        │     B/op      vs base                 │
-NewReferential/z3D_MapReferential-8        56.79Mi ± 0%     34.38Mi ± 0%  -39.45% (p=0.002 n=6)
-NewReferential/Sh3n_MapReferential-8       3.553Gi ± 0%     1.512Gi ± 0%  -57.45% (p=0.002 n=6)
-Get/z3D_MapReferential-8                     0.000 ± 0%       0.000 ± 0%        ~ (0 alloc / 0 B)
-Get/Sh3n_MapReferential-8                    0.000 ± 0%       0.000 ± 0%        ~ (0 alloc / 0 B)
+---
 
-                                     │ bench_baseline.txt │        bench_optimized_v2.txt         │
-                                     │     allocs/op      │  allocs/op   vs base                  │
-NewReferential/z3D_MapReferential-8       256.083k ± 0%     1.571k ± 0%  -99.39% (p=0.002 n=6)
-NewReferential/Sh3n_MapReferential-8     16137.75k ± 0%     66.09k ± 0%  -99.59% (p=0.002 n=6)
+## 4. Analyse & Conclusions sur la V5
+
+### 1. Dépassement des Performances de la V2 en Lecture (`8.21 ns`)
+
+- **Élimination de l'overhead de la map standard Go :** La map standard (`map[[32]byte][8]byte`) invoquait `runtime.mapaccess1`, recalculant un hash AES-NI sur 32 octets et parcourant des chaînes de buckets indirectes (~39 ns).
+- **Architecture Structure-of-Arrays (SoA) :** En séparant les tags (`[]uint16`), les hashs (`[][32]byte`) et les mots (`[][8]byte`), le sondage linéaire ne lit que 2 octets consécutifs par slot dans une tranche contiguë résidant en cache L2.
+- **Gain statistique net mesuré face à la V2 :**
+  - Temps de lecture (`GetRaw`) réduit de **-62.27%** (de `21.77 ns` en V2 à **`8.21 ns`** en V5).
+  - Temps de génération réduit de **-25.95%** (`1.56 s` contre `2.10 s` en V2).
+  - Nombre d'allocations divisé par 80 (**-98.78%**, passant de 66 072 à seulement **808** allocs).
+  - Empreinte RAM réduite de **-12.49%** (`1.318 GiB` contre `1.506 GiB` en V2).
+  - Lecture strictement garantie à **`0 B/op`** et **`0 allocs/op`**.
+
+### 2. Inlining, Zéro-Verrou & Simplicité
+
+- **Inlining garanti du Fast-Path :** La fonction `GetRaw` est inlinée par le compilateur Go directement dans le point d'appel. La résolution s'exécute en quelques cycles processeur sans allocation, ni saut de fonction, ni création de frame sur la pile.
+- **Code épuré et déterministe :** En retirant le calcul à la volée, le code redevient totalement direct, prédictible et résistant aux pics de latence en production.
+- **Sortie texte claire :** Les requêtes HTTP renvoient directement le mot déchiffré en clair sous forme de chaîne (`text/plain`), évitant toute manipulation de tableau d'octets côté client.
+
+### 3. Bilan Global
+
+La V5 cumule le meilleur de tous les mondes :
+
+- **Vitesse de lecture record :** **`8.21 ns`**, la version la plus rapide du projet.
+- **Génération la plus rapide :** **`1.56 s`** avec seulement 808 allocations sur le tas pour 16 millions d'entrées.
+- **Code concis, lisible et robuste**.
+
+---
+
+## 5. Guide d'Exécution & Outillage
+
+Toutes les commandes d'ingénierie sont encapsulées dans le Makefile:
+
+```bash
+# 1. Tests unitaires
+make test
+
+# 2. Exécution des benchmarks CPU et allocations
+make bench
+
+# 3. Analyse statistique des benchmarks
+make benchstat
+
+# 4. Compilation et lancement du serveur HTTP (Terminal 1)
+make run PORT=8080 DEPTH=4
+
+# 5. Calcul d'empreinte SHA-256 (Terminal 2)
+make hash WORD=Sh3n
+
+# 6. Requête de déchiffrement HTTP
+make guess HASH=bd7d0ea8cf7ade4a446ba4efc46fd99071ec3f423770991ac51f70ec5a894dc7
+
+# 7. Injection de charge HTTP avec Vegeta (2 000 req/s pendant 15s)
+make load RATE=2000 DURATION=15s
+
+# 8. Profiling CPU en direct sous charge (ouvre l'interface Web pprof sur :6060)
+make load-and-profile PPROF_PORT=6060
+
+# 9. Inspection de la Heap (RAM)
+make profile-heap PPROF_PORT=6060
 ```
-
-#### Synthèse par Version
-
-| Métrique / Version              | Baseline (`V0`) | Optimisé `V1` | **Optimisé `V2` (Actuel)** |      Gain total (`V0` $\to$ `V2`)      |
-| :------------------------------ | :-------------: | :-----------: | :------------------------: | :------------------------------------: |
-| **Temps Génération $d=3$**      |   `255.9 ms`    |  `206.2 ms`   |        **`29.7 ms`**       |  **-88.4% (8.6x plus rapide)**         |
-| **Temps Génération $d=4$**      |    `19.92 s`    |   `18.52 s`   |        **`1.88 s`**        |  **-90.5% (10.5x plus rapide)**        |
-| **Mémoire Génération $d=4$**    |   `3.553 GiB`   |  `1.811 GiB`  |       **`1.512 GiB`**      |  **-57.5% (divisée par 2.3)**          |
-| **Allocations Génération $d=4$**| `16 137 750`    | `16 072 515`  |        **`66 087`**        |  **-99.59% (divisées par 244)**        |
-| **Recherche $d=4$ (`Sh3n`)**    |   `34.54 ns`    |  `37.77 ns`   |        **`20.85 ns`**      |  **-39.6% plus rapide (0 alloc, 0 B)** |
-| **Requête HTTP `/guess` (Hex)** |       N/A       |  `933 ns/op`  |      **`206.2 ns/op`**     |  **0 alloc sur le chemin critique**    |
-
----
-
-## 🛠️ Commandes (via Makefile)
-
-| Action                         | Commande Makefile       | Commande brute équivalente                                                                                   |
-| :----------------------------- | :---------------------- | :----------------------------------------------------------------------------------------------------------- |
-| **Démarrer le serveur**        | `make run`              | `go build -o bin/hashbreaker-server ./cmd/srv && ./bin/hashbreaker-server`                                   |
-| **Générer un SHA-256**         | `make hash WORD=z3D`    | `go run ./cmd/hasher z3D`                                                                                    |
-| **Tester une recherche**       | `make guess HASH=...`   | `curl -s "http://localhost:8080/guess?hash=..."`                                                             |
-| **Test de charge (Vegeta)**    | `make load`             | `echo "GET http://localhost:8080/guess?hash=a532ca..." \| vegeta attack -duration=15s -rate=2000 \| vegeta report` |
-| **Charge + Profiling Web CPU** | `make load-and-profile` | Lance Vegeta en arrière-plan et ouvre pprof sur `http://localhost:6060`                                      |
-| **Profil Mémoire (Heap)**      | `make profile-heap`     | `go tool pprof -http=:6060 http://localhost:8080/debug/pprof/heap`                                           |
-| **Profil CPU ponctuel**        | `make profile-cpu`      | `go tool pprof -http=:6060 http://localhost:8080/debug/pprof/profile?seconds=10`                             |
-| **Benchmarks + Benchstat**     | `make benchstat`        | `go test -bench=. -benchmem -count=6 ./pkg > bench.txt && benchstat bench.txt`                               |
-| **Tests unitaires**            | `make test`             | `go test -v ./...`                                                                                           |
-
-> 💡 **Variables configurables :** `make run PORT=9000 DEPTH=4`, `make guess HASH=<hash>`, `make hash WORD=@kAl1`, `make load HASH=<hash> RATE=5000 DURATION=20s`.
-

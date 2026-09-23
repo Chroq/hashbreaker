@@ -36,8 +36,10 @@ bench: ## Exécute les benchmarks mémoire et CPU
 
 benchstat: ## Exécute les benchmarks et génère l'analyse statistique
 	@which benchstat > /dev/null 2>&1 || (echo "Installation de benchstat..." && go install golang.org/x/perf/cmd/benchstat@latest)
+	mv bench.txt bench_old.txt
 	go test -bench=. -benchmem -count=6 ./pkg > bench.txt
-	benchstat bench.txt
+	benchstat bench_old.txt bench.txt
+	rm bench_old.txt
 
 load: ## Exécute un test de charge avec Vegeta (ex: make load HASH=... RATE=2000 DURATION=10s)
 	@echo "GET http://localhost:$(PORT)/guess?hash=$(HASH)" | vegeta attack -duration=$(DURATION) -rate=$(RATE) | vegeta report
