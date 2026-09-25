@@ -28,11 +28,18 @@ guess: ## Interroge le serveur HTTP avec une empreinte SHA-256 (ex: make guess H
 	@curl -s "http://localhost:$(PORT)/guess?hash=$(HASH)"
 	@echo ""
 
+guess-db: ## Interroge le serveur HTTP via PostgreSQL B-Tree (ex: make guess-db HASH=...)
+	@curl -s "http://localhost:$(PORT)/guess/db?hash=$(HASH)"
+	@echo ""
+
 test: ## Exécute les tests unitaires
 	go test -v ./...
 
 bench: ## Exécute les benchmarks mémoire et CPU
 	go test -bench=. -benchmem -count=6 ./pkg
+
+bench-db: ## Exécute le benchmark comparatif RAM vs PostgreSQL pour z3D
+	go test -bench=BenchmarkMemoryVsPostgres_z3D -benchmem ./pkg/db
 
 benchstat: ## Exécute les benchmarks et génère l'analyse statistique
 	@which benchstat > /dev/null 2>&1 || (echo "Installation de benchstat..." && go install golang.org/x/perf/cmd/benchstat@latest)
